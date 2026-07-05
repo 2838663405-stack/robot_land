@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Joint States Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 12px; }
+  h1 { font-size: 18px; margin-bottom: 8px; color: #8be9fd; }
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .toolbar button {
+    background: #2d2d44; color: #e0e0e0; border: 1px solid #444; border-radius: 4px;
+    padding: 4px 12px; cursor: pointer; font-size: 13px;
+  }
+  .toolbar button:hover { background: #3d3d55; }
+  .toolbar button.active { background: #4a6fa5; border-color: #6a8fc5; }
+  .toolbar label { font-size: 13px; color: #aaa; }
+  .toolbar select, .toolbar input {
+    background: #2d2d44; color: #e0e0e0; border: 1px solid #444; border-radius: 4px;
+    padding: 3px 8px; font-size: 13px;
+  }
+  .info { font-size: 12px; color: #888; margin-bottom: 6px; }
+  .canvas-wrap { position: relative; background: #0f0f23; border: 1px solid #333; border-radius: 6px; }
+  canvas { display: block; width: 100%; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .legend-item {
+    display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer;
+    padding: 2px 8px; border-radius: 3px; transition: background 0.15s;
+  }
+  .legend-item:hover { background: #2d2d44; }
+  .legend-item.disabled { opacity: 0.3; }
+  .legend-color { width: 16px; height: 3px; border-radius: 2px; }
+  .stats { display: flex; gap: 16px; margin-top: 6px; font-size: 12px; color: #aaa; }
+</style>
+</head>
+<body>
+
+<h1>Joint States Real-time Viewer</h1>
+
+<div class="toolbar">
+  <button id="btnPause" onclick="togglePause()">⏸ Pause</button>
+  <button id="btnPos" class="active" onclick="setMode('pos')">Position</button>
+  <button id="btnVel" onclick="setMode('vel')">Velocity</button>
+  <label>Window:</label>
+  <select id="winSelect" onchange="windowSec=parseFloat(this.value)">
+    <option value="10">10s</option>
+    <option value="30" selected>30s</option>
+    <option value="60">60s</option>
+    <option value="120">120s</option>
+    <option value="9999">All</option>
+  </select>
+  <label>Poll:</label>
+  <select id="pollSelect" onchange="pollInterval=parseInt(this.value)">
+    <option value="200">200ms</option>
+    <option value="500" selected>500ms</option>
+    <option value="1000">1s</option>
+  </select>
+  <button onclick="downloadCSV()">⬇ Download CSV</button>
+</div>
+
+<div class="info" id="info">Waiting for data...</div>
+
+<div class="canvas-wrap">
+  <canvas id="chart" width="1200" height="500"></canvas>
+</div>
+
+<div class="legend" id="legend"></div>
+<div class="stats" id="stats"></div>
+
+<script>
+// ── 配置 ─────────────────────────────────────────────
+const JOINT_NAMES = ["j0_yaw","j1_roll","j2_pitch","j3_knee","j4_ankle",
+                     "j5_yaw","j6_roll","j7_pitch","j8_knee","j9_ankle"];
+const COLORS = [
+  "#ff6b6b","#feca57","#48dbfb","#1dd1a1","#a29bfe",
+  "#fd79a8","#ffeaa7","#74b9ff","#55efc4","#fdcb6e"
+];
+const POLL_URL = "/data.csv";
+
+// ── 状态 ─────────────────────────────────────────────
+let mode = "pos";           // "pos" | "vel"
+let paused = false;
+let windowSec = 30;
+let pollInterval = 500;
+let csvData = [];           // [[t, p0,v0, p1,v1, ...], ...]
+let visible = new Array(10).fill(true);
+let lastFetchTime = 0;
+
+// ── CSV 解析 ─────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  if (lines.length < 2) return [];
+  // 跳过 header
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(",");
+    if (parts.length < 21) continue;
+    const t = parseFloat(parts[0]);
+    const row = [t];
+    for (let j = 0; j < 10; j++) {
+      row.push(parseFloat(parts[1 + j*2]));     // pos
+      row.push(parseFloat(parts[1 + j*2 + 1])); // vel
+    }
+    if (!isNaN(t)) rows.push(row);
+  }
+  return rows;
+}
+
+// ── 数据拉取 ─────────────────────────────────────────
+async function fetchData() {
+  if (paused) return;
+  try {
+    const resp = await fetch(POLL_URL + "?_=" + Date.now());
+    if (!resp.ok) return;
+    const text = await resp.text();
+    csvData = parseCSV(text);
+    const now = Date.now();
+    if (now - lastFetchTime > 1000) {
+      document.getElementById("info").textContent =
+        `Data points: ${csvData.length} | Last update: ${new Date().toLocaleTimeString()}`;
+      lastFetchTime = now;
+    }
+    draw();
+    updateStats();
+  } catch (e) {
+    document.getElementById("info").textContent = "Fetch error: " + e.message;
+  }
+}
+
+// ── 绘图 ─────────────────────────────────────────────
+function draw() {
+  const canvas = document.getElementById("chart");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+
+  // 自适应宽度
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.parentElement.clientWidth;
+  if (canvas.width !== cssW * dpr) {
+    canvas.width = cssW * dpr;
+    canvas.height = 500 * dpr;
+    ctx.scale(dpr, dpr);
+  }
+  const w = cssW, h = 500;
+
+  // 背景
+  ctx.fillStyle = "#0f0f23";
+  ctx.fillRect(0, 0, w, h);
+
+  if (csvData.length < 2) {
+    ctx.fillStyle = "#666";
+    ctx.font = "16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Waiting for data...", w/2, h/2);
+    return;
+  }
+
+  // 时间范围
+  const tMin = csvData[0][0];
+  const tMax = csvData[csvData.length - 1][0];
+  const viewEnd = tMax;
+  const viewStart = windowSec >= 9999 ? tMin : Math.max(tMin, viewEnd - windowSec);
+
+  // 找 Y 范围
+  let yMin = Infinity, yMax = -Infinity;
+  for (const row of csvData) {
+    if (row[0] < viewStart) continue;
+    for (let j = 0; j < 10; j++) {
+      if (!visible[j]) continue;
+      const val = mode === "pos" ? row[1 + j*2] : row[1 + j*2 + 1];
+      if (val < yMin) yMin = val;
+      if (val > yMax) yMax = val;
+    }
+  }
+  if (yMin === Infinity) { yMin = -1; yMax = 1; }
+  // 留 10% 边距
+  const yRange = yMax - yMin || 1;
+  yMin -= yRange * 0.1;
+  yMax += yRange * 0.1;
+
+  // 画布边距
+  const padL = 60, padR = 20, padT = 20, padB = 35;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  // 坐标映射
+  const x2px = t => padL + (t - viewStart) / (viewEnd - viewStart || 1) * plotW;
+  const y2px = v => padT + (1 - (v - yMin) / (yMax - yMin || 1)) * plotH;
+
+  // 网格 + 轴标签
+  ctx.strokeStyle = "#222";
+  ctx.lineWidth = 1;
+  ctx.fillStyle = "#555";
+  ctx.font = "11px monospace";
+  ctx.textAlign = "right";
+
+  // 水平网格
+  const yTicks = 6;
+  for (let i = 0; i <= yTicks; i++) {
+    const v = yMin + (yMax - yMin) * i / yTicks;
+    const py = y2px(v);
+    ctx.beginPath();
+    ctx.moveTo(padL, py);
+    ctx.lineTo(w - padR, py);
+    ctx.stroke();
+    ctx.fillText(v.toFixed(2), padL - 6, py + 4);
+  }
+
+  // 垂直网格
+  ctx.textAlign = "center";
+  const xTicks = 8;
+  for (let i = 0; i <= xTicks; i++) {
+    const t = viewStart + (viewEnd - viewStart) * i / xTicks;
+    const px = x2px(t);
+    ctx.beginPath();
+    ctx.moveTo(px, padT);
+    ctx.lineTo(px, h - padB);
+    ctx.stroke();
+    ctx.fillText(t.toFixed(1) + "s", px, h - padB + 16);
+  }
+
+  // Y 轴标签
+  ctx.save();
+  ctx.translate(15, h/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#8be9fd";
+  ctx.font = "12px sans-serif";
+  ctx.fillText(mode === "pos" ? "Position (rad)" : "Velocity (rad/s)", 0, 0);
+  ctx.restore();
+
+  // 零线（如果 yMin < 0 < yMax）
+  if (yMin < 0 && yMax > 0) {
+    ctx.strokeStyle = "#444";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    const zeroY = y2px(0);
+    ctx.moveTo(padL, zeroY);
+    ctx.lineTo(w - padR, zeroY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 绘制曲线
+  for (let j = 0; j < 10; j++) {
+    if (!visible[j]) continue;
+    ctx.strokeStyle = COLORS[j];
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    for (const row of csvData) {
+      if (row[0] < viewStart) continue;
+      const val = mode === "pos" ? row[1 + j*2] : row[1 + j*2 + 1];
+      const px = x2px(row[0]);
+      const py = y2px(val);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else { ctx.lineTo(px, py); }
+    }
+    ctx.stroke();
+  }
+
+  // 边框
+  ctx.strokeStyle = "#333";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(padL, padT, plotW, plotH);
+}
+
+// ── 统计信息 ─────────────────────────────────────────
+function updateStats() {
+  if (csvData.length === 0) return;
+  const last = csvData[csvData.length - 1];
+  const tSpan = last[0] - csvData[0][0];
+  const rate = csvData.length / (tSpan || 1);
+  let html = `<span>Points: ${csvData.length}</span><span>Duration: ${tSpan.toFixed(1)}s</span><span>Rate: ~${rate.toFixed(1)} Hz</span>`;
+  document.getElementById("stats").innerHTML = html;
+}
+
+// ── 图例 ─────────────────────────────────────────────
+function buildLegend() {
+  const el = document.getElementById("legend");
+  el.innerHTML = "";
+  for (let j = 0; j < 10; j++) {
+    const item = document.createElement("div");
+    item.className = "legend-item" + (visible[j] ? "" : " disabled");
+    item.innerHTML = `<span class="legend-color" style="background:${COLORS[j]}"></span>${JOINT_NAMES[j]}`;
+    item.onclick = () => {
+      visible[j] = !visible[j];
+      item.classList.toggle("disabled");
+      draw();
+    };
+    el.appendChild(item);
+  }
+}
+
+// ── 交互 ─────────────────────────────────────────────
+function togglePause() {
+  paused = !paused;
+  document.getElementById("btnPause").textContent = paused ? "▶ Resume" : "⏸ Pause";
+  document.getElementById("btnPause").classList.toggle("active", paused);
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById("btnPos").classList.toggle("active", m === "pos");
+  document.getElementById("btnVel").classList.toggle("active", m === "vel");
+  draw();
+}
+
+function downloadCSV() {
+  window.open(POLL_URL, "_blank");
+}
+
+// ── 启动 ─────────────────────────────────────────────
+buildLegend();
+fetchData();
+setInterval(fetchData, pollInterval);
+
+// 窗口大小变化时重绘
+window.addEventListener("resize", () => draw());
+</script>
+
+</body>
+</html>
