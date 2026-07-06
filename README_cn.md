@@ -1,6 +1,51 @@
-# 智能双足机器人系统
+# 智能四足机器人系统
 
-基于 RDK（地平线旭日）+ ROS2 Humble 的智能双足机器人，集成 **强化学习运动控制**、**人脸视觉识别**、**DeepSeek 语音智能体** 三大核心能力。机器人可通过手柄遥控行走，也能用语音唤醒并下达指令（控制运动、启停各功能节点）。
+基于 RDK（地平线旭日）+ ROS2 Humble 的智能四足机器人，集成 **强化学习运动控制**、**人脸视觉识别**、**DeepSeek 语音智能体** 三大核心能力。机器人可通过手柄遥控行走，也能用语音唤醒并下达指令（控制运动、启停各功能节点）。
+
+## 开源协议与内容范围
+
+本项目采用 **Apache 2.0 协议**，开源内容为**系统架构设计、核心代码框架、配置与启动脚本**，旨在帮助开发者理解整体链路设计思路，可作为学习参考和二次开发基础。
+
+### ✅ 开源内容（仓库包含）
+
+- **架构设计文档**：目录结构、服务依赖关系、模块划分思路
+- **语音智能体框架**：`deepseek_voice_agent.py`（唤醒词检测、VAD录音、Function Calling、节点控制逻辑）
+- **运动控制框架**：
+  - `inference_node.py`（状态机设计、ROS2订阅/发布、摇杆映射）
+  - `joy_to_cmd_vel.py`（手柄→速度指令转换）
+  - `robot_control.launch.py`（ROS2启动配置）
+- **视觉识别框架**：`bpu_insightface_recognizer.py`（ROS2节点结构、人脸匹配流程）
+- **音频播放模块**：`audio_player.py`（edge-tts集成）
+- **启动脚本**：`start_robot.sh`、`start_bridge.sh`、`start_camera.sh`
+- **WebSocket桥接**：`ws_ros_bridge.py`（Web前端与ROS2通信）
+- **README**：完整部署、启停命令、操作说明
+
+### ⛔ 不开源内容（需自行准备）
+
+- **强化学习策略模型**：`finall.onnx`（训练权重文件，需自行训练或替换）
+- **人脸特征数据库**：`face_embeddings.pkl`（需用 `generate_embeddings.py` 自行录入）
+- **Vosk 语音模型**：`vosk_model/cn`（第三方开源模型，需自行下载）
+- **ROS2 编译产物**：`install/`、`build/`、`log/`（需在目标平台编译）
+- **硬件底层驱动**：`robot_bringup/`（关节通信、IMU驱动，依赖具体硬件）
+- **BPU 推理封装**：`bpu_infer.py`（依赖地平线 RDK BPU 工具链）
+- **第三方依赖**：ONNX Runtime、RealSense驱动、ROS2包（按依赖环境章节安装）
+
+### 🎯 快速体验完整链路
+
+即使不具备全部硬件/模型文件，也能从开源代码中理解核心设计思路：
+
+| 模块 | 可学习内容 | 需自行准备 |
+|------|-----------|-----------|
+| **语音智能体** | VAD触发逻辑、边录边识别优化、静音早停、Function Calling调用流程、节点控制模式 | DeepSeek API Key、Vosk模型 |
+| **运动控制** | 状态机设计（IDLE→SQUAT→STAND→INFERENCE）、按键事件处理、速度指令映射、50Hz控制循环 | RL策略模型、ROS2环境 |
+| **视觉识别** | ROS2节点结构、人脸特征匹配流程、TTS播报集成 | RealSense相机、人脸特征库 |
+| **系统服务** | systemd服务配置、节点依赖关系、启停命令 | 无 |
+
+**推荐学习路径**：
+1. 阅读 `deepseek_voice_agent.py` 理解语音唤醒+Function Calling+节点控制链路
+2. 阅读 `inference_node.py` 理解状态机设计和摇杆控制流程
+3. 阅读 `robot_control.launch.py` 理解 ROS2 节点编排方式
+4. 阅读 systemd 服务配置理解系统级服务管理
 
 ## 目录结构
 
