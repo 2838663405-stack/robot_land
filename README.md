@@ -1,6 +1,6 @@
-# Intelligent Quadruped Robot System
+# Intelligent Bipedal Robot System
 
-An intelligent quadruped robot based on RDK (Horizon Robotics) + ROS2 Humble, integrating three core capabilities: **Reinforcement Learning Motion Control**, **Face Visual Recognition**, and **DeepSeek Voice Agent**. The robot can be controlled via gamepad for walking, and also responds to voice commands (motion control, node start/stop).
+An intelligent bipedal robot based on RDK (Horizon Robotics) + ROS2 Humble, integrating three core capabilities: **Reinforcement Learning Motion Control**, **Face Visual Recognition**, and **DeepSeek Voice Agent**. The robot can be controlled via gamepad for walking, and also responds to voice commands (motion control, node start/stop).
 
 ## Open Source License & Content Scope
 
