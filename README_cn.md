@@ -240,7 +240,8 @@ IDLE(待机) --A--> SQUAT(蹲下) --A--> STAND(站立) --A--> SQUAT
 ```bash
 # 查看 IP 和网卡信息
 ifconfig
-
+# 查看当前网关
+ip route show default
 # 查看当前连接的 WiFi 名称
 iwconfig
 # 或者直接用
