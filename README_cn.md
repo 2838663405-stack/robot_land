@@ -232,3 +232,45 @@ IDLE(待机) --A--> SQUAT(蹲下) --A--> STAND(站立) --A--> SQUAT
 - `joy` ROS2 包
 - 地平线 RDK BPU 工具链（视觉推理）
 - ONNX Runtime（RL 策略推理）
+
+## RDK 网络配置指南
+
+### 1. 查看当前网络状态
+
+```bash
+# 查看 IP 和网卡信息
+ifconfig
+
+# 查看当前连接的 WiFi 名称
+iwconfig
+# 或者直接用
+iwgetid
+
+# 1. 扫描附近的 WiFi
+sudo nmcli dev wifi list
+
+# 2. 连接指定 WiFi（替换 SSID 和 PASSWORD）
+sudo nmcli dev wifi connect SSID_NAME password PASSWORD
+
+# 3. 确认连接成功
+iwgetid
+
+# 列出所有网络连接配置
+ls /etc/NetworkManager/system-connections/
+
+# 打开对应 WiFi 的配置文件
+sudo vim /etc/NetworkManager/system-connections/你的WiFi名称
+
+[ipv4]
+method=manual
+addresses=192.168.1.100/24      # 改为现场需要的 IP
+gateway=192.168.1.1             # 改为现场网关
+dns=8.8.8.8;114.114.114.114;
+
+# 方法一：重启网络服务
+sudo systemctl restart NetworkManager
+
+# 方法二：重启开发板（推荐）
+sudo reboot
+
+```
