@@ -272,6 +272,10 @@ dns=8.8.8.8;114.114.114.114;
 sudo systemctl restart NetworkManager
 
 # 方法二：重启开发板（推荐）
-sudo reboot
 
+sudo nmcli connection modify "fsr213ASUS_5G-2" ipv4.addresses 192.168.50.114/24
+sudo nmcli connection modify "fsr213ASUS_5G-2" ipv4.gateway 192.168.50.1
+sudo nmcli connection modify "fsr213ASUS_5G-2" ipv4.dns "8.8.8.8 114.114.114.114"
+sudo nmcli connection modify "fsr213ASUS_5G-2" ipv4.method manual
+sudo reboot
 ```
