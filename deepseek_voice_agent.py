@@ -18,7 +18,7 @@ from openai import OpenAI
 sys.stderr = open('/tmp/alsa_err.log', 'w')
 
 # 加载 ROS2 环境（如果可用）
-ros2_setup = '/opt/ros/humble/setup.py'
+ros2_setup = '/opt/ros/humble/setup.bash'
 if os.path.exists(ros2_setup):
     sys.path.insert(0, '/opt/ros/humble/lib/python3.10/site-packages')
     try:
